@@ -82,7 +82,7 @@ flowchart LR
 服务器启动时由 `ToolKit.init` 注册以下内置工具。所有工具均返回 JSON 对象；返回错误时填充 `isError: true` 并附带标准化错误码（详见 `ErrorCodes.kt`）。
 
 <details>
-<summary>展开查看全部 45 个工具（8 个分类）</summary>
+<summary>展开查看全部 46 个工具（9 个分类）</summary>
 
 ### 应用管理
 
