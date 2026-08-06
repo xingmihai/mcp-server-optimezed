@@ -70,7 +70,7 @@ flowchart LR
 | `GET`    | `/sse`              | Server-Sent Events 长连接                     |
 | `GET`    | `/tools`            | 列出所有已注册工具（含桥接工具）              |
 | `GET`    | `/info`、`/meta`    | 服务器元信息（端口、协议版本、能力）          |
-| `GET`    | `/`、`/status`      | 人类可读运行状态                              |
+| `GET`    | `/`、`/status`      | 可读运行状态                              |
 | `GET`    | `/health`           | 健康检查与运行时长                            |
 
 服务器实现的 JSON-RPC 方法包括 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`、`resources/list`、`prompts/list` 等。
