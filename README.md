@@ -268,9 +268,6 @@ Authorization: Bearer <token>
 | `MANAGE_EXTERNAL_STORAGE`                  | 旧版本 “所有文件访问” 权限                                          |
 | `QUERY_ALL_PACKAGES`                       | `installed_apps` 工具枚举全部应用                                   |
 
-> [!WARNING]
-> `MANAGE_EXTERNAL_STORAGE` 与 `QUERY_ALL_PACKAGES` 属于高敏感权限，可能影响应用商店上架。请评估实际使用场景后再决定是否对外分发。
-
 ---
 
 ## 致谢
