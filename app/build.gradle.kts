@@ -54,14 +54,15 @@ android {
 
     buildTypes {
         release {
+            // 默认开启 R8 代码压缩 + 资源压缩；需要排查问题时用 -PMINIFY=false 临时关闭
+            isMinifyEnabled = (project.findProperty("MINIFY") as String?)?.toBoolean() ?: true
+            isShrinkResources = (project.findProperty("SHRINK_RES") as String?)?.toBoolean() ?: true
             signingConfig = if (signingReady) {
                 signingConfigs.getByName("release")
             } else {
                 println("⚠️  未检测到签名配置，Release 将使用 debug 签名")
                 signingConfigs.getByName("debug")
             }
-            // 默认沿用仓库原设置；CI 可用 -PMINIFY=true 打开混淆
-            isMinifyEnabled = (project.findProperty("MINIFY") as String?)?.toBoolean() ?: false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
