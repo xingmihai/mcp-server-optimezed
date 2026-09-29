@@ -4,6 +4,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 版本号可由 CI 注入：./gradlew assembleRelease -PAPP_VERSION_NAME=1.0.1 -PAPP_VERSION_CODE=12
+// 本地直接构建时不传参数，回退到下面的默认值
+val appVersionName: String = (project.findProperty("APP_VERSION_NAME") as String?) ?: "1.0"
+val appVersionCode: Int = ((project.findProperty("APP_VERSION_CODE") as String?) ?: "1").toInt()
+
+// 签名信息全部从环境变量读取（CI 注入），本地无环境变量时自动回退 debug 签名
+val signingKeystorePath: String? = System.getenv("SIGNING_KEYSTORE_PATH")
+val signingReady: Boolean =
+    !signingKeystorePath.isNullOrBlank() && java.io.File(signingKeystorePath).exists()
+
 android {
     namespace = "com.mcp.server"
     compileSdk = 35
@@ -12,13 +22,31 @@ android {
         applicationId = "com.mcp.server"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        create("release") {
+            if (signingReady) {
+                storeFile = java.io.File(signingKeystorePath!!)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            signingConfig = if (signingReady) {
+                signingConfigs.getByName("release")
+            } else {
+                println("⚠️  未检测到签名配置，Release 将使用 debug 签名")
+                signingConfigs.getByName("debug")
+            }
+            // 默认沿用仓库原设置；CI 可用 -PMINIFY=true 打开混淆
+            isMinifyEnabled = (project.findProperty("MINIFY") as String?)?.toBoolean() ?: false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

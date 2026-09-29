@@ -1,0 +1,176 @@
+name: Android 构建与发版
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "构建类型"
+        type: choice
+        options: [both, debug, release]
+        default: both
+      publish_release:
+        description: "是否创建 GitHub Release"
+        type: boolean
+        default: false
+      release_tag:
+        description: "Release 用的 tag（如 v1.0.1），手动触发时留空则自动用 v+版本号"
+        type: string
+        required: false
+      minify:
+        description: "Release 是否开启代码混淆（需 proguard 规则齐全，谨慎开启）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_FLAGS: "--no-daemon --stacktrace"
+
+jobs:
+  build:
+    name: 构建 APK（Debug / Release）
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.meta.outputs.version_name }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      should_release: ${{ steps.meta.outputs.should_release }}
+      signed: ${{ steps.signing.outputs.signed }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Gradle（含依赖缓存）
+        uses: gradle/actions/setup-gradle@v4
+
+      # 仓库里提交了 local.properties 且 sdk.dir=/opt/android-sdk，会覆盖 CI 的 SDK 路径，必须改写
+      - name: 修正 local.properties
+        run: |
+          SDK_PATH="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "sdk.dir=$SDK_PATH" > local.properties
+          chmod +x ./gradlew
+
+      - name: 准备签名密钥
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$SIGNING_KEY_ALIAS" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mcp-server.jks"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/mcp-server.jks" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 使用仓库 Secrets 中的正式签名密钥"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::未配置签名 Secrets，Release APK 将使用 debug 签名（不可上架，仅可自测）"
+          fi
+
+      - name: 计算版本号
+        id: meta
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+            TAG_NAME="${GITHUB_REF_NAME}"
+            SHOULD_RELEASE="true"
+          else
+            VERSION_NAME="1.0.0-dev-${GITHUB_SHA::7}"
+            TAG_NAME="${{ inputs.release_tag }}"
+            SHOULD_RELEASE="${{ inputs.publish_release }}"
+            [ -z "$SHOULD_RELEASE" ] && SHOULD_RELEASE="false"
+          fi
+          VERSION_CODE=$(git rev-list --count HEAD)
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${TAG_NAME:-v$VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "🏷  versionName=$VERSION_NAME  versionCode=$VERSION_CODE"
+
+      - name: 构建 Debug APK
+        if: inputs.build_type != 'release'
+        run: |
+          ./gradlew :app:assembleDebug $GRADLE_FLAGS \
+            -PAPP_VERSION_NAME="${{ steps.meta.outputs.version_name }}" \
+            -PAPP_VERSION_CODE="${{ steps.meta.outputs.version_code }}"
+
+      - name: 构建 Release APK
+        if: github.event_name != 'pull_request' && inputs.build_type != 'debug'
+        run: |
+          MINIFY_FLAG=""
+          if [ "${{ inputs.minify }}" = "true" ]; then MINIFY_FLAG="-PMINIFY=true"; fi
+          ./gradlew :app:assembleRelease $GRADLE_FLAGS $MINIFY_FLAG \
+            -PAPP_VERSION_NAME="${{ steps.meta.outputs.version_name }}" \
+            -PAPP_VERSION_CODE="${{ steps.meta.outputs.version_code }}"
+
+      - name: 整理产物
+        id: collect
+        run: |
+          mkdir -p artifacts
+          V="${{ steps.meta.outputs.version_name }}"
+          [ -f app/build/outputs/apk/debug/app-debug.apk ] && \
+            cp app/build/outputs/apk/debug/app-debug.apk "artifacts/mcp-server-$V-debug.apk" || true
+          [ -f app/build/outputs/apk/release/app-release.apk ] && \
+            cp app/build/outputs/apk/release/app-release.apk "artifacts/mcp-server-$V-release.apk" || true
+          ls -lh artifacts
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-server-apk-${{ steps.meta.outputs.version_name }}
+          path: artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 生成 Release Notes
+        if: steps.meta.outputs.should_release == 'true'
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${{ steps.meta.outputs.release_tag }}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then RANGE="$PREV_TAG..HEAD"; else RANGE="HEAD"; fi
+          {
+            echo "## 更新内容"
+            git log "$RANGE" --no-merges --pretty=format:'- %s (%h)' || echo "- 首次发布"
+            echo ""
+            echo ""
+            echo "## APK"
+            for f in artifacts/*.apk; do
+              echo "- \`$(basename "$f")\` — $(du -h "$f" | cut -f1) — sha256 \`$(sha256sum "$f" | cut -c1-16)…\`"
+            done
+            echo ""
+            if [ "${{ steps.signing.outputs.signed }}" != "true" ]; then
+              echo "> ⚠️ Release APK 使用 debug 签名，仅供自测，请勿分发上架。"
+            fi
+            echo "> versionCode ${{ steps.meta.outputs.version_code }} · minSdk 26 · targetSdk 35"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: 创建 GitHub Release
+        if: steps.meta.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          name: mcp-server ${{ steps.meta.outputs.version_name }}
+          body_path: RELEASE_NOTES.md
+          files: artifacts/*.apk
+          draft: false
+          prerelease: ${{ contains(steps.meta.outputs.version_name, '-') }}
