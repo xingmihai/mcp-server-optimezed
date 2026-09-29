@@ -10,9 +10,11 @@ val appVersionName: String = (project.findProperty("APP_VERSION_NAME") as String
 val appVersionCode: Int = ((project.findProperty("APP_VERSION_CODE") as String?) ?: "1").toInt()
 
 // 签名信息全部从环境变量读取（CI 注入），本地无环境变量时自动回退 debug 签名
-val signingKeystorePath: String? = System.getenv("SIGNING_KEYSTORE_PATH")
-val signingReady: Boolean =
-    !signingKeystorePath.isNullOrBlank() && java.io.File(signingKeystorePath).exists()
+// 注意：这里必须用 project.file() 构造 File，Kotlin DSL 脚本内不能写 java.io.File
+val keystoreFile = System.getenv("SIGNING_KEYSTORE_PATH")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { file(it) }
+val signingReady: Boolean = keystoreFile?.exists() == true
 
 android {
     namespace = "com.mcp.server"
@@ -29,7 +31,7 @@ android {
     signingConfigs {
         create("release") {
             if (signingReady) {
-                storeFile = java.io.File(signingKeystorePath!!)
+                storeFile = keystoreFile
                 storePassword = System.getenv("SIGNING_STORE_PASSWORD")
                 keyAlias = System.getenv("SIGNING_KEY_ALIAS")
                 keyPassword = System.getenv("SIGNING_KEY_PASSWORD")

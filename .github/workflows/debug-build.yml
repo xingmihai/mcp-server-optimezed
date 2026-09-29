@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: debug-${{ github.ref }}
@@ -53,21 +53,9 @@ jobs:
 
       - name: 构建 Debug APK
         run: |
-          set -o pipefail
           ./gradlew :app:assembleDebug --no-daemon --stacktrace \
             -PAPP_VERSION_NAME="${{ steps.meta.outputs.version_name }}" \
-            -PAPP_VERSION_CODE="${{ steps.meta.outputs.version_code }}" 2>&1 | tee build.log
-
-      - name: 导出构建日志（失败时）
-        if: failure()
-        run: |
-          git config user.name "ci-bot"
-          git config user.email "ci-bot@example.com"
-          git checkout -B ci-logs
-          tail -c 200000 build.log > ci-debug.log
-          git add -f ci-debug.log
-          git commit -m "ci logs ${GITHUB_RUN_ID}" || echo "no change"
-          git push -f origin ci-logs
+            -PAPP_VERSION_CODE="${{ steps.meta.outputs.version_code }}"
 
       - name: 整理产物
         run: |
