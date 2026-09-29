@@ -77,6 +77,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -663,25 +664,39 @@ private fun ConnectionRow(label: String, value: String, onCopy: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onCopy)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.ContentCopy, contentDescription = "复制",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .size(18.dp)
-                .clickable(onClick = onCopy))
+        // 醒目复制按钮：圆形底色 + 40dp 触控区，点击后 Toast 提示
+        IconButton(onClick = onCopy, modifier = Modifier.size(40.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = "复制$label",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                value,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-            )
+            SelectionContainer {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                )
+            }
         }
     }
 }
@@ -689,4 +704,5 @@ private fun ConnectionRow(label: String, value: String, onCopy: () -> Unit) {
 private fun copyText(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     cm.setPrimaryClip(android.content.ClipData.newPlainText("mcp", text))
+    android.widget.Toast.makeText(context, "已复制到剪贴板", android.widget.Toast.LENGTH_SHORT).show()
 }
