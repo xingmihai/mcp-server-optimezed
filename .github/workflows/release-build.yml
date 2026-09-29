@@ -36,6 +36,11 @@ jobs:
   release:
     name: 构建 Release APK 并发版
     runs-on: ubuntu-latest
+    env:
+      # 密钥别名为中文，强制 runner 与 JVM 使用 UTF-8，避免别名解析成乱码
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8"
 
     steps:
       - name: 检出代码
@@ -79,8 +84,14 @@ jobs:
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mcp-server.jks"
-          echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/mcp-server.jks" >> "$GITHUB_ENV"
-          echo "✅ 已加载正式签名密钥"
+          KS="$RUNNER_TEMP/mcp-server.jks"
+          # 校验别名确实存在于 keystore 中（中文别名主要防乱码）
+          keytool -list -keystore "$KS" -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" \
+            || { echo "::error::在 keystore 中找不到别名，检查 SIGNING_KEY_ALIAS 是否正确"; exit 1; }
+          keytool -list -v -keystore "$KS" -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" \
+            | grep -E "Alias name|SHA256|Valid from" | sed 's/^/  /'
+          echo "SIGNING_KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
+          echo "✅ 签名密钥校验通过"
 
       - name: 计算版本号
         id: meta
