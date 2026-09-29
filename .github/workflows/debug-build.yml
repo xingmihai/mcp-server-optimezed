@@ -32,7 +32,6 @@ jobs:
       - name: 配置 Gradle（含依赖缓存）
         uses: gradle/actions/setup-gradle@v4
 
-      # 仓库里提交了 local.properties 且 sdk.dir=/opt/android-sdk，会覆盖 CI 的 SDK 路径，必须改写
       # 仓库里误提交了 local.properties（写死 sdk.dir=/opt/android-sdk），必须移除，
       # 让 AGP 直接用 runner 的 ANDROID_HOME 定位 SDK
       - name: 修正 local.properties
