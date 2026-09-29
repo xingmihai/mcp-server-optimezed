@@ -18,6 +18,9 @@ jobs:
   debug:
     name: 构建 Debug APK
     runs-on: ubuntu-latest
+    env:
+      # 版本号按构建日期生成（YY.MM.DD / YYMMDD），固定用北京时间，避免 UTC 跨日偏差
+      TZ: Asia/Shanghai
 
     steps:
       - name: 检出代码
@@ -42,20 +45,18 @@ jobs:
           ls "$ANDROID_HOME/platforms" | head -5
           chmod +x ./gradlew
 
-      - name: 计算版本号
+      - name: 计算版本号（按构建日期）
         id: meta
         run: |
-          VERSION_NAME="1.0.0-dev-${GITHUB_SHA::7}"
-          VERSION_CODE=$(git rev-list --count HEAD)
+          VERSION_NAME=$(date +'%y.%m.%d')
+          VERSION_CODE=$(date +'%y%m%d')
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "🏷  versionName=$VERSION_NAME  versionCode=$VERSION_CODE"
 
       - name: 构建 Debug APK
         run: |
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace \
-            -PAPP_VERSION_NAME="${{ steps.meta.outputs.version_name }}" \
-            -PAPP_VERSION_CODE="${{ steps.meta.outputs.version_code }}"
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       - name: 整理产物
         run: |
@@ -67,7 +68,7 @@ jobs:
       - name: 上传 Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mcp-server-debug-${{ github.sha }}
+          name: mcp-server-debug-${{ steps.meta.outputs.version_name }}
           path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 14

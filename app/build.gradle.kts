@@ -1,13 +1,26 @@
+import java.time.LocalDate
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// 版本号可由 CI 注入：./gradlew assembleRelease -PAPP_VERSION_NAME=1.0.1 -PAPP_VERSION_CODE=12
-// 本地直接构建时不传参数，回退到下面的默认值
-val appVersionName: String = (project.findProperty("APP_VERSION_NAME") as String?) ?: "1.0"
-val appVersionCode: Int = ((project.findProperty("APP_VERSION_CODE") as String?) ?: "1").toInt()
+// 版本完全由构建日期决定，不在代码里硬编码：
+//   2026-09-29 → versionName = 26.09.29 ，versionCode = 260929
+// versionCode 采用 YYMMDD，保证跨月跨年始终递增（可用 -PAPP_VERSION_CODE 覆盖）
+// 时区由环境变量 TZ 决定，CI 中固定为 Asia/Shanghai
+val buildDate: LocalDate = LocalDate.now()
+val dateVersionName: String = "%02d.%02d.%02d".format(
+    buildDate.year % 100, buildDate.monthValue, buildDate.dayOfMonth
+)
+val dateVersionCode: Int =
+    (buildDate.year % 100) * 10000 + buildDate.monthValue * 100 + buildDate.dayOfMonth
+
+val appVersionName: String = (project.findProperty("APP_VERSION_NAME") as String?) ?: dateVersionName
+val appVersionCode: Int = ((project.findProperty("APP_VERSION_CODE") as String?) ?: dateVersionCode.toString()).toInt()
+
+println("📦 versionName=$appVersionName  versionCode=$appVersionCode")
 
 // 签名信息全部从环境变量读取（CI 注入），本地无环境变量时自动回退 debug 签名
 // 注意：这里必须用 project.file() 构造 File，Kotlin DSL 脚本内不能写 java.io.File

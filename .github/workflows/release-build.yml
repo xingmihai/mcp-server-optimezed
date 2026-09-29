@@ -5,15 +5,15 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag，必须以 v 开头，例如 v1.0.0"
+        description: "Release tag，留空则自动用 v + 当天日期（如 v26.09.29）；如需自定义必须以 v 开头"
         type: string
-        required: true
+        required: false
       version_name:
-        description: "versionName，留空则取 tag 去掉 v（如 v1.0.0 → 1.0.0）"
+        description: "versionName，留空则按构建日期生成（如 26.09.29）"
         type: string
         required: false
       version_code:
-        description: "versionCode（正整数），留空则用提交数自动计算；发布到商店时建议手动指定并保证递增"
+        description: "versionCode，留空则按构建日期生成（如 260929）；同一天重复发版可手动指定更大值"
         type: integer
         required: false
       minify:
@@ -41,6 +41,8 @@ jobs:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
       JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8"
+      # 版本号按构建日期生成，固定北京时间，避免 UTC 跨日导致日期差一天
+      TZ: Asia/Shanghai
       # 签名变量必须在 job 级声明，否则只有单个 step 可见，Gradle 读到的会是空值
       SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -55,8 +57,8 @@ jobs:
       - name: 校验输入
         run: |
           TAG="${{ inputs.release_tag }}"
-          case "$TAG" in v*) ;; *) echo "::error::release_tag 必须以 v 开头，当前为 $TAG"; exit 1;; esac
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
+          case "$TAG" in ""|v*) ;; *) echo "::error::release_tag 必须以 v 开头，当前为 $TAG"; exit 1;; esac
+          if [ -n "$TAG" ] && git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
             echo "::error::tag $TAG 已存在，请换一个版本号"; exit 1
           fi
 
@@ -98,16 +100,18 @@ jobs:
           echo "SIGNING_KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
           echo "✅ 签名密钥校验通过"
 
-      - name: 计算版本号
+      - name: 计算版本号（按构建日期）
         id: meta
         run: |
-          TAG="${{ inputs.release_tag }}"
           VERSION_NAME="${{ inputs.version_name }}"
-          [ -z "$VERSION_NAME" ] && VERSION_NAME="${TAG#v}"
+          [ -z "$VERSION_NAME" ] && VERSION_NAME=$(date +'%y.%m.%d')
           VERSION_CODE="${{ inputs.version_code }}"
-          [ -z "$VERSION_CODE" ] && VERSION_CODE=$(git rev-list --count HEAD)
+          [ -z "$VERSION_CODE" ] && VERSION_CODE=$(date +'%y%m%d')
+          TAG="${{ inputs.release_tag }}"
+          [ -z "$TAG" ] && TAG="v$VERSION_NAME"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "🏷  $TAG  versionName=$VERSION_NAME  versionCode=$VERSION_CODE"
 
       - name: 构建 Release APK
@@ -163,7 +167,7 @@ jobs:
       - name: 打 tag 并创建 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
+          tag_name: ${{ steps.meta.outputs.tag }}
           name: mcp-server ${{ steps.meta.outputs.version_name }}
           body_path: RELEASE_NOTES.md
           files: artifacts/*.apk
